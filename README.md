@@ -9,7 +9,7 @@ The goal of this project is to create an end-to-end deep learning pipeline that 
 I took this project this summer and it has been a great learning experience. It was such a fulfilling journey and I am really thankful for the guidance from the project mentors at VLG.
 
 The Reader is free to try out the code I used in this project themselves by opening the google colab link provided below, train the models and look for the magic themselves.
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)]
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1b_1Llx12pKGMaUXPDz90Ar8CXlNUfUUh?authuser=1)
 ## A Preview
 
 ![App Screenshot](https://via.placeholder.com/468x300?text=App+Screenshot+Here)
