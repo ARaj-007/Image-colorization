@@ -24,7 +24,7 @@ Colorization is the process of adding color information to monochrome photograph
 
 ### *IMAGE-COLORIZATION - BY Abhiyansh Raj*
 'Raja Harishchandra' was the first ever film in India, black and white  ofcourse. Indeed we have come a long way from those B & W days into SUPER-AMOLED crystal clear colourful times .Colours really bring out the emotion in a scene :)
-Here's a project an attempt by me to make use of deep learning and see if I can successfully colorize a given black and white image to a colourdul one. 
+Here's a project an attempt by me to make use of deep learning and see if I can successfully colorize a given black and white image to a colourful one. 
 Hope you like my work, I'll be adding my thoughts and lessons in between the code wherever I feel there's a point worth noting.
 
 Below are the libraries and frameworks we'll be requiring, the code is mainly PyTorch but we will be requiring fastai at a few places to help us build things without complications.
