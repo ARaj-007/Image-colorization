@@ -9,7 +9,7 @@ The goal of this project is to create an end-to-end deep learning pipeline that 
 I took this project this summer and it has been a great learning experience. It was such a fulfilling journey and I am really thankful for the guidance from the project mentors at VLG.
 
 The Reader is free to try out the code I used in this project themselves by opening the google colab link provided below, train the models and look for the magic themselves.
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1b_1Llx12pKGMaUXPDz90Ar8CXlNUfUUh?authuser=1)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)]
 ## A Preview
 
 ![App Screenshot](https://via.placeholder.com/468x300?text=App+Screenshot+Here)
@@ -149,6 +149,147 @@ let's see if this works:-
 train_dl = img_dataloaders(paths=train_paths, split='train')
 val_dl = img_dataloaders(paths=val_paths, split='val')
 ```
+
+# Making the Generator
+Here we make use of U-Net architecture in the generator of our GAN.
+
+Working : - The U-Net adds down-sampling and up-sampling modules to the left and right of that middle module (respectively) at every iteration until it reaches the input module and output module.
+
+```python
+class UnetBlock(nn.Module):
+    def __init__(self, nf, ni, submodule=None, input_c=None, dropout=False,
+                 innermost=False, outermost=False):
+        super().__init__()
+        self.outermost = outermost
+        if input_c is None: input_c = nf
+        downconv = nn.Conv2d(input_c, ni, kernel_size=4,
+                             stride=2, padding=1, bias=False)
+        downrelu = nn.LeakyReLU(0.2, inplace = True)
+        downnorm = nn.BatchNorm2d(ni)
+        uprelu = nn.ReLU(True)
+        upnorm = nn.BatchNorm2d(nf)
+        
+        if outermost:
+            upconv = nn.ConvTranspose2d(ni * 2, nf, kernel_size=4,
+                                        stride=2, padding=1)
+            down = [downconv]
+            up = [uprelu, upconv, nn.Tanh()]
+            model = down + [submodule] + up
+        elif innermost:
+            upconv = nn.ConvTranspose2d(ni, nf, kernel_size=4,
+                                        stride=2, padding=1, bias=False)
+            down = [downrelu, downconv]
+            up = [uprelu, upconv, upnorm]
+            model = down + up
+        else:
+            upconv = nn.ConvTranspose2d(ni * 2, nf, kernel_size=4,
+                                        stride=2, padding=1, bias=False)
+            down = [downrelu, downconv, downnorm]
+            up = [uprelu, upconv, upnorm]
+            if dropout: up += [nn.Dropout(0.5)]
+            model = down + [submodule] + up
+        self.model = nn.Sequential(*model)
+    
+    def forward(self, x):
+        if self.outermost:
+            return self.model(x)
+        else:
+            return torch.cat([x, self.model(x)], 1)
+
+class Unet(nn.Module):
+    def __init__(self, input_c=1, output_c=2, n_down=8, num_filters=64):
+        super().__init__()
+        unet_block = UnetBlock(num_filters * 8, num_filters * 8, innermost=True)
+        for _ in range(n_down - 5):
+            unet_block = UnetBlock(num_filters * 8, num_filters * 8, submodule=unet_block, dropout=True)
+        out_filters = num_filters * 8
+        for _ in range(3):
+            unet_block = UnetBlock(out_filters // 2, out_filters, submodule=unet_block)
+            out_filters //= 2
+        self.model = UnetBlock(output_c, out_filters, input_c=input_c, submodule=unet_block, outermost=True)
+    
+    def forward(self, x):
+        return self.model(x)
+```
+
+```python
+#Now, let's have a visual look of our generator model
+generator_model = Unet()
+print(generator_model)
+```
+
+```python
+#Generator Model Summary
+#uncomment if runtime is not set to GPU
+#from torchsummary import summary
+#summary(generator_model, (1,256,256))
+```
+
+#Making the **Discriminator**
+Now, below is the code for our discriminator. Here, we are stacking blocks of Conv-BatchNorm-LeackyRelu to make a decision about the reality or fakeness of our input image.
+
+-We will not apply normalization to first and last blocks and the last block will have no activation function too.
+
+## **Patch Discriminator**
+In a normal discriminator, the model only gives out 1 number which represents what the model thinks of the input as in the whole image whether it is real or fake. On the other hand, our patch disciminator works on every patch like 50 by 50 pixels of the input image and for each patch it decides whether it is fake or not.
+
+```python
+class PatchDiscriminator(nn.Module):
+    def __init__(self, input_c, num_filters=64, n_down=3):
+        super().__init__()
+        model = [self.get_layers(input_c, num_filters, norm=False)]
+        model += [self.get_layers(num_filters * 2 ** i, num_filters * 2 ** (i + 1), s=1 if i == (n_down-1) else 2) 
+                          for i in range(n_down)] # the 'if' statement ensures not using stride of 2 for last block
+        model += [self.get_layers(num_filters * 2 ** n_down, 1, s=1, norm=False, act=False)] # No normalization or activation for last layer
+        self.model = nn.Sequential(*model)                                                   
+        
+    def get_layers(self, ni, nf, k=4, s=2, p=1, norm=True, act=True): # when needing to make some repeatitive blocks of layers,
+        layers = [nn.Conv2d(ni, nf, k, s, p, bias=not norm)]          # it's always helpful to make a separate method for that purpose
+        if norm: layers += [nn.BatchNorm2d(nf)]
+        if act: layers += [nn.LeakyReLU(0.2, True)]
+        return nn.Sequential(*layers)
+    
+    def forward(self, x):
+        return self.model(x)
+```
+
+```python
+#Visualizing our discriminator
+discriminator = PatchDiscriminator(3)
+discriminator
+```
+
+```python
+dummy_input = torch.randn(16, 3, 256, 256) # batch_size, channels, size, size
+out = discriminator(dummy_input)
+out.shape
+```
+
+# GAN LOSS CLASS
+```python
+class GANLoss(nn.Module):
+    def __init__(self, gan_mode='vanilla', real_label=1.0, fake_label=0.0):
+        super().__init__()
+        self.register_buffer('real_label', torch.tensor(real_label))
+        self.register_buffer('fake_label', torch.tensor(fake_label))
+        if gan_mode == 'vanilla':
+            self.loss = nn.BCEWithLogitsLoss()
+        elif gan_mode == 'lsgan':
+            self.loss = nn.MSELoss()
+    
+    def get_labels(self, preds, target_is_real):
+        if target_is_real:
+            labels = self.real_label
+        else:
+            labels = self.fake_label
+        return labels.expand_as(preds)
+    
+    def __call__(self, preds, target_is_real):
+        labels = self.get_labels(preds, target_is_real)
+        loss = self.loss(preds, labels)
+        return loss
+```
+
 
 
 ## Acknowledgements
