@@ -11,7 +11,7 @@ I took this project this summer and it has been a great learning experience. It 
 The Reader is free to try out the code I used in this project themselves by opening the google colab link provided below, train the models and look for the magic themselves.
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1b_1Llx12pKGMaUXPDz90Ar8CXlNUfUUh?authuser=1#scrollTo=DV9iVxPpIgDI)
 
-I have provided important code snippets in this README, for complete code please refer to the colab link.
+I have provided fundamental code snippets in this README, for complete code please refer to the colab link.
 ## A Preview
 
 ![App Screenshot](https://i.imgur.com/7sJGzK4.png)
@@ -55,7 +55,7 @@ use_colab = None
 
 ### OUR DATASET :
 
-Now, we will be making use of IMAGES from COCO dataset. This dataset has roughly 20000 images but for our purposes we will making use of roughly 10000.
+Now, we will be making use of IMAGES from COCO(Common Object in Context) dataset. This dataset has roughly 20000 images but for our purposes we will making use of roughly 10000.
 In which, 8000 will be used for training and the rest 2000 as our validation set.
 
 ```python
@@ -111,6 +111,8 @@ LAB on the other hand represents 3 channels - L channel , *a channel, *b channel
 
 *Credits for image - Graeme Cookson / Shutha.org*
 
+When utilising L*a*b, we can provide the model with the L channel (the grayscale image) and ask it to forecast the other two channels (*a, *b). After it makes its prediction, we concatenate all the channels to produce the coloured image. However, if you use RGB, you must first convert your image to grayscale, then feed the grayscale image to the model and hope it predicts three numbers for you. This is a much trickier and unstable task because there are far more combinations of three numbers than there are of two numbers, making the task much more difficult and unstable.
+
 
 ```python
 #MAKING THE DATACLASS
@@ -151,16 +153,21 @@ def img_dataloaders(batch_size=16, n_workers=4, pin_memory=True, **kwargs):
     return dataloader
 ```
 
-let's see if this works:-
+### LOSSES IN OUR model
+Here x is the grayscale image, z is the generator's input noise, and y as the desired 2-channel output (it can also represent the 2 colour channels of a real image). Additionally, D is the discriminator and G is the generating model.
+The noise is introduced in the form of *dropout layers*.
+![](https://i.imgur.com/ffB7vgl.jpg)
 
-```python
-train_dl = img_dataloaders(paths=train_paths, split='train')
-val_dl = img_dataloaders(paths=val_paths, split='val')
-```
+Mean Absolute Error
+![](https://i.imgur.com/5AmApyf.jpg)
+
+Combining the adversial loss and mae.
+![](https://i.imgur.com/Etlfmp0.jpg)
 
 # Making the Generator
 Here we make use of U-Net architecture in the generator of our GAN.
 
+![](https://i.imgur.com/JsOwaI2.png)
 Working : - The U-Net adds down-sampling and up-sampling modules to the left and right of that middle module (respectively) at every iteration until it reaches the input module and output module.
 
 ```python
@@ -220,19 +227,6 @@ class Unet(nn.Module):
         return self.model(x)
 ```
 
-```python
-#Now, let's have a visual look of our generator model
-generator_model = Unet()
-print(generator_model)
-```
-
-```python
-#Generator Model Summary
-#uncomment if runtime is not set to GPU
-#from torchsummary import summary
-#summary(generator_model, (1,256,256))
-```
-
 ## Making the **Discriminator**
 Now, below is the code for our discriminator. Here, we are stacking blocks of Conv-BatchNorm-LeackyRelu to make a decision about the reality or fakeness of our input image.
 
@@ -261,42 +255,142 @@ class PatchDiscriminator(nn.Module):
         return self.model(x)
 ```
 
+
+
+
+## Results and Visualization
+Now,let us get a sense of our model functioning till this stage.
+After about 40 -50 epochs, we obtain one of the results as follows.
+
+![](https://i.imgur.com/5loW9wh.png)
+
+Though there is some promise, but the results are far from perfect. Notice, how the model fills areas with just gray or brown when its unsure what to predict.
+
+## THROUGH GRAPHS
+
+
+![](https://i.imgur.com/K8Zo2DR.png)
+
+The convergence of false and actual images toward one another, which is visible, suggests that the generator is becoming more adept at creating real images.
+
+![](https://i.imgur.com/993uNr6.png)
+
+If trained on more epochs, the generator loss will further decrease as the number of epochs increases.
+
+![](https://i.imgur.com/z2IFNiQ.png)
+
+*Generator v/s discriminator loss.*
+
+Indeed, we have come a long way and the results we have obtained our good(after about 50 epochs) but as we can see , the model still does not recognize the colour of some objects. Let us now apply a different approach.
+
+# NEW MODEL
+Here, first we are going to pre train the generator in a superwised manner.
+This will be done in 2 stages: Stage 1: - The backbone of the generator (the down sampling path) is a pretrained model for classification (on ImageNet) 2- The whole generator will be pretrained on the task of colorization with L1 loss.
+
+We will be using a pretrained ResNet18 as the backbone of our U-Net and further we will train that U-Net on our training set with L1 Loss. Last but not least we will have the combined adversial and L1 loss as done earlier.
+
+## New Generator
+We will use fastai (as mentioned earlier) library's Dynamic U-Net module to avoid complicated stuff.
 ```python
-#Visualizing our discriminator
-discriminator = PatchDiscriminator(3)
-discriminator
+from fastai.vision.learner import create_body
+from torchvision.models.resnet import resnet18
+from fastai.vision.models.unet import DynamicUnet
 ```
+```python
+def build_res_unet(n_input=1, n_output=2, size=256):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    body = create_body(resnet18, pretrained=True, n_in=n_input, cut=-2)  # Ignoring the last two layers (GlobalAveragePooling and a Linear layer)
+    net_G = DynamicUnet(body, n_output, (size, size)).to(device)
+    return net_G
+```
+### Pre-Training the generator
+```python
+def pretrain_generator(net_G, train_dl, opt, criterion, epochs):
+    for e in range(epochs):
+        loss_meter = AverageMeter()
+        for data in tqdm(train_dl):
+            L, ab = data['L'].to(device), data['ab'].to(device)
+            preds = net_G(L)
+            loss = criterion(preds, ab)
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+            
+            loss_meter.update(loss.item(), L.size(0))
+            
+        print(f"Epoch {e + 1}/{epochs}")
+        print(f"L1 Loss: {loss_meter.avg:.5f}")
+
+net_G = build_res_unet(n_input=1, n_output=2, size=256)
+opt = optim.Adam(net_G.parameters(), lr=1e-4)
+criterion = nn.L1Loss()        
+pretrain_generator(net_G, train_dl, opt, criterion, 20)
+torch.save(net_G.state_dict(), "res18-unet.pt") #saving pretrained model
+# we will train this for about 20 epochs
+```
+# OUR FINAL MODEL
+Now,let us put our new changes into effect.
 
 ```python
-dummy_input = torch.randn(16, 3, 256, 256) # batch_size, channels, size, size
-out = discriminator(dummy_input)
-out.shape
+def train_model(model, train_dl, epochs):
+    valid_data = next(iter(val_dl))        # Visualizing output on valid_Data
+
+    for e in range(epochs):
+  
+        loss_meter_dict = create_loss_meters() 
+                                         
+        for data in tqdm(train_dl):
+            model.setup_input(data) 
+            model.optimize()
+            update_losses(model, loss_meter_dict, count=data['L'].size(0))        # Updating the loss_meter_dict
+        
+        model_save_name = f"imgcl_model_final_{e+1}.pt"
+        path = f"/content/gdrive/My Drive/Image-colouriziation/{model_save_name}"      # Saving the model after every epoch
+        torch.save(model.state_dict(), path)
+
+
+        print(f"\nEpoch {e+1}/{epochs}")
+        log_results(loss_meter_dict) # Function to print out the losses
+        visualize(model, valid_data, e) # Function displaying the model's outputs
+        ```
+        ```python
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+net_G = build_res_unet(n_input=1, n_output=2, size=256)
+net_G.load_state_dict(torch.load("res18-unet.pt", map_location=device))
+model = MainModel(net_G=net_G)
+train_model(model, train_dl, 20)
 ```
 
-# GAN LOSS CLASS
-```python
-class GANLoss(nn.Module):
-    def __init__(self, gan_mode='vanilla', real_label=1.0, fake_label=0.0):
-        super().__init__()
-        self.register_buffer('real_label', torch.tensor(real_label))
-        self.register_buffer('fake_label', torch.tensor(fake_label))
-        if gan_mode == 'vanilla':
-            self.loss = nn.BCEWithLogitsLoss()
-        elif gan_mode == 'lsgan':
-            self.loss = nn.MSELoss()
-    
-    def get_labels(self, preds, target_is_real):
-        if target_is_real:
-            labels = self.real_label
-        else:
-            labels = self.fake_label
-        return labels.expand_as(preds)
-    
-    def __call__(self, preds, target_is_real):
-        labels = self.get_labels(preds, target_is_real)
-        loss = self.loss(preds, labels)
-        return loss
-```
+# **RESULTS, COMPARISIONS AND FINDINGS**
+So, afters hours of traing and tweaking here we are with the final results.
+Notice, the improvement we have over our previous results. The colours are more realistic and to the point. Not only the second strategy improved our results but also took less time and epochs to train.
+
+![](https://i.imgur.com/2syAp6Y.png)
+
+another set
+
+![](https://i.imgur.com/L6Fnd8e.png)
+
+
+## The case of DROPOUT
+IN the begininning, in our generator architecture, the cause of the noise was the dropout layers but in the U-Net we built with the help of fastai had no dropout layers !
+
+What does this imply ? 
+The conditional GAN is still able to function without the dropout layers however the outputs will be more deterministic because of the lack of that noise but  the grayscale image has still crucial information sufficient enough for the generator to produce convincing outputs. 
+But,in reality the adversarial training does give us an edge and is more fruiful.
+
+
+# CONCLUSIONS
+We have successfully achieved our task of colourizing black and white images. The results clearly show a level of improvement. The final prediction is very close to the actual image, thus pretraining our generator was really helpful.
+
+## AN END Note
+
+With this we have achieved our objective. I would again like to state that this project was a wonderful experience and I am really thankful to VLG for this opportunity. Hoping to collaborate more in the future !
+
+
+## Contributions
+
+Contributions are always welcome!
 
 
 
