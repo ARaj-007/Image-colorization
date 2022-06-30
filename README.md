@@ -9,10 +9,12 @@ The goal of this project is to create an end-to-end deep learning pipeline that 
 I took this project this summer and it has been a great learning experience. It was such a fulfilling journey and I am really thankful for the guidance from the project mentors at VLG.
 
 The Reader is free to try out the code I used in this project themselves by opening the google colab link provided below, train the models and look for the magic themselves.
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)]
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1b_1Llx12pKGMaUXPDz90Ar8CXlNUfUUh?authuser=1#scrollTo=DV9iVxPpIgDI)
+
+I have provided important code snippets in this README, for complete code please refer to the colab link.
 ## A Preview
 
-![App Screenshot](https://via.placeholder.com/468x300?text=App+Screenshot+Here)
+![App Screenshot](https://i.imgur.com/7sJGzK4.png)
 
 
 ## Motivation
@@ -20,7 +22,7 @@ The Reader is free to try out the code I used in this project themselves by open
 Colorization is the process of adding color information to monochrome photographs or videos. The colorization of grayscale images is an ill-posed problem, with multiple correct solutions. Deep learning algorithms that better understand image data like the colors that are generally observed for human faces should ideally perform better in this task.
 
 
-### *IMAGE-COLORIZATION - BY Abhiyansh Raj** 
+### *IMAGE-COLORIZATION - BY Abhiyansh Raj*
 'Raja Harishchandra' was the first ever film in India, black and white  ofcourse. Indeed we have come a long way from those B & W days into SUPER-AMOLED crystal clear colourful times .Colours really bring out the emotion in a scene :)
 Here's a project an attempt by me to make use of deep learning and see if I can successfully colorize a given black and white image to a colourdul one. 
 Hope you like my work, I'll be adding my thoughts and lessons in between the code wherever I feel there's a point worth noting.
@@ -50,6 +52,8 @@ use_colab = None
 ```python
 !pip install fastai==2.4
 ```
+
+### OUR DATASET :
 
 Now, we will be making use of IMAGES from COCO dataset. This dataset has roughly 20000 images but for our purposes we will making use of roughly 10000.
 In which, 8000 will be used for training and the rest 2000 as our validation set.
@@ -89,11 +93,15 @@ for ax, img_path in zip(axes.flatten(), train_paths):
     ax.axis("off")
 ```
 
+![](https://i.imgur.com/yn74xKE.png)
+
 ## Creating the Dataset class
 Here, we will resize the image and flip it horizontally(if it belongs to traing set, data augmentation technique) and convert the RGB image read into Lab colorspace where will separate the input(L) and output(Target - a and b).
 
 -DATA AUGMENTATION : -
 Data augmentation in data analysis are techniques used to increase the amount of data by adding slightly modified copies of already existing data or newly created synthetic data from existing data. It acts as a regularizer and helps reduce overfitting when training a machine learning model.
+
+![](https://i.imgur.com/fQXOOn8.jpg)
 
 -RGB AND LAB :- 
 RGB data represents colour in RGB colour space where there are 3 numbers for each pixel indicating how much Red, Green, and Blue the pixel is.
@@ -225,12 +233,12 @@ print(generator_model)
 #summary(generator_model, (1,256,256))
 ```
 
-#Making the **Discriminator**
+## Making the **Discriminator**
 Now, below is the code for our discriminator. Here, we are stacking blocks of Conv-BatchNorm-LeackyRelu to make a decision about the reality or fakeness of our input image.
 
 -We will not apply normalization to first and last blocks and the last block will have no activation function too.
 
-## **Patch Discriminator**
+### **Patch Discriminator**
 In a normal discriminator, the model only gives out 1 number which represents what the model thinks of the input as in the whole image whether it is real or fake. On the other hand, our patch disciminator works on every patch like 50 by 50 pixels of the input image and for each patch it decides whether it is fake or not.
 
 ```python
