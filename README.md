@@ -352,9 +352,10 @@ def train_model(model, train_dl, epochs):
         print(f"\nEpoch {e+1}/{epochs}")
         log_results(loss_meter_dict) # Function to print out the losses
         visualize(model, valid_data, e) # Function displaying the model's outputs
-        ```
-        ```python
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+ ```
+        
+```python
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 net_G = build_res_unet(n_input=1, n_output=2, size=256)
 net_G.load_state_dict(torch.load("res18-unet.pt", map_location=device))
 model = MainModel(net_G=net_G)
